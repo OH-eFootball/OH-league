@@ -1,3 +1,6 @@
-// 本地测试配置。
-// 要做成公开共享网站时，把 supabase-config.example.js 里的内容复制到这里并填入 Supabase 参数。
-window.OH_LEAGUE_SUPABASE = null;
+window.OH_LEAGUE_SUPABASE = {
+  url: "https://sovexsclgmkhtqhjulih.supabase.co",
+  anonKey: "sb_publishable_P5DC1sU7qH04mjkFDvUmPw_xxqP8yU4",
+  rowId: "main",
+  adminPassword: "OHadmin"
+};
