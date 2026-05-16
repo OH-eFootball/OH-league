@@ -791,7 +791,7 @@ function renderPlayerDetail() {
           <h3>积分与组别</h3>
           <div class="profile-stat-grid">
             ${statCard("总积分", player.totalPoints)}
-            ${statCard("当前组别", `${player.group}组`, "blue")}
+            ${statCard("当前组别", displayPlayerGroup(player), "blue")}
             ${statCard("历史最高组", `${player.highestGroup}组`, "gold")}
           </div>
         </div>
@@ -993,7 +993,7 @@ function renderPlayerTable(players) {
               <td>
                 <b class="points-tooltip">${player.totalPoints}<span class="points-pop"><span class="gold-text">${breakdown.base}</span><span>+</span><span class="blue">${breakdown.extra}</span></span></b>
               </td>
-              <td><span class="pill">${player.group}组</span></td>
+              <td><span class="pill">${displayPlayerGroup(player)}</span></td>
               <td>${player.weekRecord}</td>
               <td>${totalRecord(player.id)}</td>
               <td>${kitMatchCount(player.id)}</td>
@@ -1177,7 +1177,7 @@ function renderPlayerAdminRow(player) {
           <input type="number" value="${Number(player.manualAdjustment || 0)}" data-player-manual="${player.id}">
         </label>
       </div>
-      <p class="muted tiny">${player.group}组 · ${player.totalPoints} 分 · ${player.wins}/${player.matches}${player.inactive ? " · 已移出积分榜" : ""}</p>
+      <p class="muted tiny">${displayPlayerGroup(player)} · ${player.totalPoints} 分 · ${player.wins}/${player.matches}${player.inactive ? " · 已移出积分榜" : ""}</p>
       ${player.inactive ? `<span class="pill red">已移出积分榜</span>` : `<button class="danger-button" data-delete-player="${player.id}">移出积分榜</button>`}
     </article>
   `;
@@ -1214,7 +1214,7 @@ function playerOptions(group = null) {
     .slice()
     .filter((player) => !group || player.group === group)
     .sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"))
-    .map((player) => `<option value="${player.id}">${escapeHtml(player.name)} · ${player.group}组</option>`)
+    .map((player) => `<option value="${player.id}">${escapeHtml(player.name)} · ${displayPlayerGroup(player)}</option>`)
     .join("");
 }
 
@@ -1930,6 +1930,11 @@ function playerLink(id, fallbackName = null, className = "inline-link") {
   const name = fallbackName || playerName(playerId);
   if (!state.players.some((player) => player.id === playerId)) return escapeHtml(name);
   return `<a class="${escapeAttr(className)}" href="#player:${playerId}" data-player-detail="${playerId}">${escapeHtml(name)}</a>`;
+}
+
+function displayPlayerGroup(player) {
+  if (isFirstWeek()) return "无";
+  return `${player.group}组`;
 }
 
 function matchGroupLabel(group) {
