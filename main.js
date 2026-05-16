@@ -749,9 +749,7 @@ function renderSubmit() {
             <option value="B">B 玩家</option>
             <option value="both">A 和 B 玩家</option>
           `, true)}
-          <label class="field">系统自动时间
-            <input name="playedAtPreview" type="datetime-local" value="${escapeAttr(localDateTimeValue(nextMatchStartDate()))}" readonly>
-          </label>
+          <div class="panel tiny">系统会在点击提交时记录当前真实时间。</div>
         </div>
         <div id="group-hint" class="panel tiny">${availablePlayers.length < 2 ? "可选玩家不足 2 人，无法提交比赛。" : ""}</div>
         <div class="button-row">
@@ -1455,7 +1453,7 @@ async function onSubmitMatch(event) {
     toast("已移出积分榜的玩家不能提交新战报");
     return;
   }
-  const playedAt = nextMatchStartDate().toISOString();
+  const playedAt = nextManualMatchDate().toISOString();
 
   state.matches.push({
     id: nextId(state.matches),
@@ -1691,6 +1689,16 @@ function nextMatchStartDate() {
   const startTime = start.getTime();
   if (!latest) return start;
   return new Date(Math.max(latest + 10 * 60 * 1000, startTime));
+}
+
+function nextManualMatchDate() {
+  const now = new Date();
+  const latest = state.matches
+    .map((match) => new Date(match.playedAt).getTime())
+    .filter((time) => !Number.isNaN(time))
+    .sort((a, b) => b - a)[0];
+  if (!latest || now.getTime() > latest) return now;
+  return new Date(latest + 60 * 1000);
 }
 
 function resetBoard() {
