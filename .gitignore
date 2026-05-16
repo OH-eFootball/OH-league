@@ -1,0 +1,8 @@
+node_modules
+.next
+dist
+server/league.sqlite
+server/league.sqlite-shm
+server/league.sqlite-wal
+.env
+data
