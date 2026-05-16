@@ -24,6 +24,7 @@ let h2hPair = null;
 let selectedSubmitGroup = null;
 let selectedAdminMatchWeek = "全部";
 let selectedAdminMatchPlayerId = "全部";
+let startupError = "";
 
 const app = document.querySelector("#app");
 
@@ -31,7 +32,13 @@ init();
 
 async function init() {
   bindTopNav();
-  await loadState();
+  try {
+    await loadState();
+  } catch (error) {
+    startupError = error?.message || "加载失败";
+    console.error(error);
+    state = normalizeState(createInitialState());
+  }
   render();
 }
 
@@ -541,10 +548,22 @@ function render() {
   bindPageEvents();
 }
 
+function renderStartupWarning() {
+  if (!startupError) return "";
+  return `
+    <section class="panel gold-panel">
+      <h2>在线数据加载失败</h2>
+      <p class="muted">网页已经打开，但没有成功连接 Supabase，所以当前显示的不是多人共享数据。</p>
+      <p class="red-text tiny">${escapeHtml(startupError)}</p>
+    </section>
+  `;
+}
+
 function renderHome() {
   const honors = homeHonors();
   const week = currentWeekInfo();
   return `
+    ${renderStartupWarning()}
     <section class="hero">
       <div class="hero-main">
         <div>

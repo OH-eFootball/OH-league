@@ -10,6 +10,9 @@ create table if not exists public.league_state (
 
 alter table public.league_state enable row level security;
 
+grant usage on schema public to anon, authenticated;
+grant select, insert, update on public.league_state to anon, authenticated;
+
 drop policy if exists "league_state_public_select" on public.league_state;
 drop policy if exists "league_state_public_insert" on public.league_state;
 drop policy if exists "league_state_public_update" on public.league_state;
