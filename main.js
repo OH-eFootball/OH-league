@@ -1,7 +1,6 @@
 const STORAGE_KEY = "oh-league-state-v1";
 const GROUPS = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛"];
 const OFFICIAL_SEASON_START_DATE = "2026-05-18";
-const OFFICIAL_RESET_AT = "2026-05-18T01:00:00+08:00";
 const STREAK_REWARDS = [
   { threshold: 3, bonus: 1 },
   { threshold: 5, bonus: 2 },
@@ -90,7 +89,6 @@ async function loadState() {
     seedIfEmpty();
     await saveState();
   }
-  await runAutomaticMaintenance();
   recompute();
 }
 
@@ -126,7 +124,6 @@ function createInitialState() {
     groupHistory: [],
     simulationDate: new Date().toISOString().slice(0, 10),
     seasonStartDate: OFFICIAL_SEASON_START_DATE,
-    officialResetDone: false,
     metaHistory: []
   };
 }
@@ -154,8 +151,7 @@ function normalizeState(data) {
     champions: Array.isArray(data.champions) ? data.champions : [],
     groupHistory: Array.isArray(data.groupHistory) ? data.groupHistory : [],
     simulationDate: data.simulationDate || new Date().toISOString().slice(0, 10),
-    seasonStartDate: data.officialResetDone ? (data.seasonStartDate || OFFICIAL_SEASON_START_DATE) : OFFICIAL_SEASON_START_DATE,
-    officialResetDone: Boolean(data.officialResetDone),
+    seasonStartDate: data.seasonStartDate || OFFICIAL_SEASON_START_DATE,
     metaHistory: Array.isArray(data.metaHistory) ? data.metaHistory : []
   };
 }
@@ -469,67 +465,6 @@ function forceRegroup(shouldSave = true, historyWeek = null) {
 function openGroups(totalPlayers = activePlayers().length) {
   const count = Math.max(1, Math.min(GROUPS.length, Math.floor(totalPlayers / 10) || 1));
   return GROUPS.slice(0, count);
-}
-
-async function runAutomaticMaintenance() {
-  let changed = syncRealDate();
-  if (shouldRunOfficialReset()) {
-    performOfficialReset();
-    changed = true;
-  }
-  if (state.officialResetDone && autoSettlePastWeeks()) {
-    changed = true;
-  }
-  if (changed) await saveState();
-}
-
-function syncRealDate() {
-  const today = dateInputValue(new Date());
-  if (state.simulationDate === today) return false;
-  state.simulationDate = today;
-  return true;
-}
-
-function shouldRunOfficialReset(now = new Date()) {
-  return !state.officialResetDone && now.getTime() >= new Date(OFFICIAL_RESET_AT).getTime();
-}
-
-function performOfficialReset() {
-  state.matches = [];
-  state.settlements = [];
-  state.champions = [];
-  state.groupHistory = [];
-  state.metaHistory = [];
-  state.simulationDate = dateInputValue(new Date());
-  state.seasonStartDate = OFFICIAL_SEASON_START_DATE;
-  state.officialResetDone = true;
-  for (const player of state.players) {
-    player.manualAdjustment = 0;
-    player.totalPoints = 0;
-    player.weekRecord = "0-0-0";
-    player.streak = 0;
-    player.wins = 0;
-    player.matches = 0;
-    player.group = "甲";
-    player.highestGroup = "甲";
-  }
-  forceRegroup(false);
-}
-
-function autoSettlePastWeeks() {
-  if (weekNumber(currentSimulationDate()) <= 0) return false;
-  let changed = false;
-  const currentWeekStart = new Date(`${currentWeekKey()}T00:00:00`);
-  const cursor = new Date(`${state.seasonStartDate || OFFICIAL_SEASON_START_DATE}T00:00:00`);
-  while (cursor < currentWeekStart) {
-    const targetWeek = weekKey(cursor);
-    if (weekNumber(targetWeek) >= 1 && !isWeekSettled(targetWeek)) {
-      settleWeek(targetWeek, false);
-      changed = true;
-    }
-    cursor.setDate(cursor.getDate() + 7);
-  }
-  return changed;
 }
 
 function settleWeek(targetWeek = settlementTargetWeek(), shouldPersist = true) {
@@ -1831,7 +1766,6 @@ function resetBoard() {
   state.metaHistory = [];
   state.simulationDate = today;
   state.seasonStartDate = OFFICIAL_SEASON_START_DATE;
-  state.officialResetDone = today >= OFFICIAL_SEASON_START_DATE;
   for (const player of state.players) {
     player.manualAdjustment = 0;
     player.totalPoints = 0;
