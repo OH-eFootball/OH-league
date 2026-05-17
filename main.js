@@ -569,15 +569,15 @@ function renderHome() {
       <div class="hero-main">
         <div>
           <h1 class="home-title"><span class="gradient-title">使用说明</span></h1>
-          <p class="hero-copy">提交战报，系统完成自动计分、连胜奖励、Meta 加成、排行榜、每周结算和自动分组。</p>
           <div class="home-rules">
             <details class="rule-fold">
-              <summary>约战与分组</summary>
+              <summary>展开详情</summary>
+              <p class="muted">提交战报，系统完成自动计分、连胜奖励、Meta 加成、排行榜、每周结算和自动分组。</p>
               <p class="muted">同组别内自由约战，每周结算后按总积分自动分为甲乙丙丁等组。</p>
+              <p class="muted">胜 +3，平 +1，负 +0；使用本周 Meta 队套胜/平额外加 1 分，负不加分。</p>
+              <p class="muted">同两名玩家每周最多 2 场有效比赛；每人每周至少 5 场有效比赛，少 1 场扣 1 分。</p>
+              <p class="muted">三/五/十连胜每周分别触发一次额外加分；Meta 计分规则也可以额外加分。</p>
             </details>
-            <p class="muted">胜 +3，平 +1，负 +0；使用本周 Meta 队套胜/平额外加 1 分，负不加分。</p>
-            <p class="muted">同两名玩家每周最多 2 场有效比赛；每人每周至少 5 场有效比赛，少 1 场扣 1 分。</p>
-            <p class="muted">三/五/十连胜每周分别触发一次额外加分；Meta 计分规则也可以额外加分。</p>
           </div>
         </div>
         <div class="hero-actions">
@@ -1660,6 +1660,11 @@ function addTestPlayers(count = 10) {
 
 function enterNextWeek() {
   const settledWeek = currentWeekKey();
+  if (weekNumber(settledWeek) <= 0) {
+    state.simulationDate = state.seasonStartDate || OFFICIAL_SEASON_START_DATE;
+    persistAndRender("已进入第 1 周，正式开赛");
+    return;
+  }
   settleWeek(settledWeek, false);
   const next = currentSimulationDate();
   next.setDate(next.getDate() + 7);
@@ -1758,14 +1763,15 @@ function nextManualMatchDate() {
 
 function resetBoard() {
   if (!confirm("确认重置积分榜并清除所有战报、结算记录和荣誉记录？玩家名单会保留。")) return;
-  const today = dateInputValue(new Date());
+  const preseason = new Date(`${OFFICIAL_SEASON_START_DATE}T12:00:00`);
+  preseason.setDate(preseason.getDate() - 1);
   state.matches = [];
   state.settlements = [];
   state.champions = [];
   state.groupHistory = [];
   state.metaHistory = [];
-  state.simulationDate = today;
   state.seasonStartDate = OFFICIAL_SEASON_START_DATE;
+  state.simulationDate = dateInputValue(preseason);
   for (const player of state.players) {
     player.manualAdjustment = 0;
     player.totalPoints = 0;
@@ -1773,9 +1779,10 @@ function resetBoard() {
     player.streak = 0;
     player.wins = 0;
     player.matches = 0;
-    player.highestGroup = player.group;
+    player.group = "无";
+    player.highestGroup = "无";
   }
-  persistAndRender("积分榜已重置，赛季回到第 1 周");
+  persistAndRender("积分榜已重置，赛季回到第 0 周");
 }
 
 function deleteInvalidMatches() {
