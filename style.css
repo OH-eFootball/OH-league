@@ -221,6 +221,23 @@ h3 {
   line-height: 1.65;
 }
 
+.rule-fold {
+  min-width: 0;
+  border: 1px solid rgba(54, 163, 255, 0.2);
+  background: rgba(255, 255, 255, 0.045);
+  padding: 10px 12px;
+}
+
+.rule-fold summary {
+  cursor: pointer;
+  color: var(--gold);
+  font-weight: 900;
+}
+
+.rule-fold p {
+  margin-top: 8px;
+}
+
 .hero-actions {
   display: flex;
   flex-wrap: wrap;
@@ -682,7 +699,8 @@ tr:hover td {
   display: grid;
   gap: 10px;
   max-height: 460px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .match-card {
@@ -904,20 +922,18 @@ tr:hover td {
   }
 
   .profile-timeline-list {
-    display: flex;
-    overflow-x: auto;
+    display: grid;
+    overflow-x: hidden;
+    overflow-y: auto;
     width: 100%;
     max-width: 100%;
-    max-height: none;
-    padding-bottom: 8px;
-    scroll-snap-type: x proximity;
-    -webkit-overflow-scrolling: touch;
+    max-height: 520px;
+    padding-bottom: 0;
+    scroll-snap-type: none;
   }
 
   .profile-timeline-list .timeline-card {
-    flex: 0 0 100%;
     min-width: 0;
-    scroll-snap-align: start;
   }
 
   .profile-history-list {

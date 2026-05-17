@@ -570,7 +570,10 @@ function renderHome() {
           <h1 class="home-title"><span class="gradient-title">使用说明</span></h1>
           <p class="hero-copy">提交战报，系统完成自动计分、连胜奖励、Meta 加成、排行榜、每周结算和自动分组。</p>
           <div class="home-rules">
-            <p class="muted">同组别内自由约战，每周结算后按总积分自动分为甲乙丙丁等组。</p>
+            <details class="rule-fold">
+              <summary>约战与分组</summary>
+              <p class="muted">同组别内自由约战，每周结算后按总积分自动分为甲乙丙丁等组。</p>
+            </details>
             <p class="muted">胜 +3，平 +1，负 +0；使用本周 Meta 队套胜/平额外加 1 分，负不加分。</p>
             <p class="muted">同两名玩家每周最多 2 场有效比赛；每人每周至少 5 场有效比赛，少 1 场扣 1 分。</p>
             <p class="muted">三/五/十连胜每周分别触发一次额外加分；Meta 计分规则也可以额外加分。</p>
@@ -790,7 +793,7 @@ function renderPlayerDetail() {
           <div class="profile-stat-grid">
             ${statCard("总积分", player.totalPoints)}
             ${statCard("当前组别", displayPlayerGroup(player), "blue")}
-            ${statCard("历史最高组", `${player.highestGroup}组`, "gold")}
+            ${statCard("历史最高组", displayHighestGroup(player), "gold")}
           </div>
         </div>
         <div class="profile-stat-group">
@@ -815,12 +818,12 @@ function renderPlayerDetail() {
     </section>
     <section class="two-grid profile-detail-grid">
       <div class="panel">
-        <h2>得分记录</h2>
-        <div class="match-list profile-timeline-list">${pointTimeline.length ? pointTimeline.map(renderPointTimelineCard).join("") : `<div class="empty">暂无有效比赛</div>`}</div>
-      </div>
-      <div class="panel">
         <h2>历史成绩</h2>
         <div class="profile-history-list">${weeklyHistory.length ? weeklyHistory.map(renderGroupHistoryLine).join("") : `<p class="muted">暂无结算成绩</p>`}</div>
+      </div>
+      <div class="panel">
+        <h2>得分记录</h2>
+        <div class="match-list profile-timeline-list">${pointTimeline.length ? pointTimeline.map(renderPointTimelineCard).join("") : `<div class="empty">暂无有效比赛</div>`}</div>
       </div>
     </section>
   `;
@@ -1978,6 +1981,13 @@ function playerLink(id, fallbackName = null, className = "inline-link") {
 function displayPlayerGroup(player) {
   if (isFirstWeek()) return "无";
   return `${player.group}组`;
+}
+
+function displayHighestGroup(player) {
+  const settledWeeks = new Set(state.settlements.map((item) => item.weekKey));
+  const hasSettledGroup = state.groupHistory.some((item) => item.playerId === player.id && settledWeeks.has(item.weekKey));
+  if (!hasSettledGroup) return "无";
+  return `${player.highestGroup}组`;
 }
 
 function matchGroupLabel(group) {
