@@ -1,5 +1,7 @@
 const STORAGE_KEY = "oh-league-state-v1";
 const GROUPS = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛"];
+const OFFICIAL_SEASON_START_DATE = "2026-05-18";
+const OFFICIAL_RESET_AT = "2026-05-18T01:00:00+08:00";
 const STREAK_REWARDS = [
   { threshold: 3, bonus: 1 },
   { threshold: 5, bonus: 2 },
@@ -88,6 +90,7 @@ async function loadState() {
     seedIfEmpty();
     await saveState();
   }
+  await runAutomaticMaintenance();
   recompute();
 }
 
@@ -122,7 +125,8 @@ function createInitialState() {
     champions: [],
     groupHistory: [],
     simulationDate: new Date().toISOString().slice(0, 10),
-    seasonStartDate: weekKey(new Date()),
+    seasonStartDate: OFFICIAL_SEASON_START_DATE,
+    officialResetDone: false,
     metaHistory: []
   };
 }
@@ -150,7 +154,8 @@ function normalizeState(data) {
     champions: Array.isArray(data.champions) ? data.champions : [],
     groupHistory: Array.isArray(data.groupHistory) ? data.groupHistory : [],
     simulationDate: data.simulationDate || new Date().toISOString().slice(0, 10),
-    seasonStartDate: data.seasonStartDate || weekKey(data.simulationDate || new Date()),
+    seasonStartDate: data.officialResetDone ? (data.seasonStartDate || OFFICIAL_SEASON_START_DATE) : OFFICIAL_SEASON_START_DATE,
+    officialResetDone: Boolean(data.officialResetDone),
     metaHistory: Array.isArray(data.metaHistory) ? data.metaHistory : []
   };
 }
@@ -224,7 +229,7 @@ function recompute() {
     match.pointPartsA = [];
     match.pointPartsB = [];
 
-    if (!isFirstWeek(match.playedAt) && aGroup !== bGroup) {
+    if (!isUngroupedWeek(match.playedAt) && aGroup !== bGroup) {
       match.valid = false;
       match.invalidReason = "跨组比赛无效";
     } else if (usedCount >= 2) {
@@ -466,6 +471,67 @@ function openGroups(totalPlayers = activePlayers().length) {
   return GROUPS.slice(0, count);
 }
 
+async function runAutomaticMaintenance() {
+  let changed = syncRealDate();
+  if (shouldRunOfficialReset()) {
+    performOfficialReset();
+    changed = true;
+  }
+  if (state.officialResetDone && autoSettlePastWeeks()) {
+    changed = true;
+  }
+  if (changed) await saveState();
+}
+
+function syncRealDate() {
+  const today = dateInputValue(new Date());
+  if (state.simulationDate === today) return false;
+  state.simulationDate = today;
+  return true;
+}
+
+function shouldRunOfficialReset(now = new Date()) {
+  return !state.officialResetDone && now.getTime() >= new Date(OFFICIAL_RESET_AT).getTime();
+}
+
+function performOfficialReset() {
+  state.matches = [];
+  state.settlements = [];
+  state.champions = [];
+  state.groupHistory = [];
+  state.metaHistory = [];
+  state.simulationDate = dateInputValue(new Date());
+  state.seasonStartDate = OFFICIAL_SEASON_START_DATE;
+  state.officialResetDone = true;
+  for (const player of state.players) {
+    player.manualAdjustment = 0;
+    player.totalPoints = 0;
+    player.weekRecord = "0-0-0";
+    player.streak = 0;
+    player.wins = 0;
+    player.matches = 0;
+    player.group = "甲";
+    player.highestGroup = "甲";
+  }
+  forceRegroup(false);
+}
+
+function autoSettlePastWeeks() {
+  if (weekNumber(currentSimulationDate()) <= 0) return false;
+  let changed = false;
+  const currentWeekStart = new Date(`${currentWeekKey()}T00:00:00`);
+  const cursor = new Date(`${state.seasonStartDate || OFFICIAL_SEASON_START_DATE}T00:00:00`);
+  while (cursor < currentWeekStart) {
+    const targetWeek = weekKey(cursor);
+    if (weekNumber(targetWeek) >= 1 && !isWeekSettled(targetWeek)) {
+      settleWeek(targetWeek, false);
+      changed = true;
+    }
+    cursor.setDate(cursor.getDate() + 7);
+  }
+  return changed;
+}
+
 function settleWeek(targetWeek = settlementTargetWeek(), shouldPersist = true) {
   freezeWeekMetaSnapshots(targetWeek, state.meta.scoringMeta, targetWeek === currentWeekKey() && !isWeekSettled(targetWeek));
   for (const player of activePlayers()) {
@@ -628,7 +694,7 @@ function currentWeekInfo() {
 function weekNumber(dateInput = new Date()) {
   const start = new Date(`${state.seasonStartDate || weekKey(dateInput)}T00:00:00`);
   const current = new Date(`${weekKey(dateInput)}T00:00:00`);
-  return Math.max(1, Math.floor((current - start) / (7 * 86400000)) + 1);
+  return Math.max(0, Math.floor((current - start) / (7 * 86400000)) + 1);
 }
 
 function settlementCountdown(now = new Date()) {
@@ -728,7 +794,7 @@ function renderLeaderboard() {
 }
 
 function renderSubmit() {
-  const firstWeek = isFirstWeek();
+  const firstWeek = isUngroupedWeek();
   const groups = groupsWithPlayers();
   if (!selectedSubmitGroup || !groups.includes(selectedSubmitGroup)) selectedSubmitGroup = groups[0] || "甲";
   const availablePlayers = firstWeek ? activePlayers() : activePlayers().filter((player) => player.group === selectedSubmitGroup);
@@ -862,6 +928,7 @@ function renderAdmin() {
         <button class="ghost-button" data-admin-action="next-week">进入下一周</button>
         <button class="ghost-button" data-admin-action="seed">补充测试玩家</button>
         <button class="ghost-button" data-admin-action="random-matches">录入随机战报</button>
+        <button class="ghost-button" data-admin-action="export-backup">导出数据备份</button>
         <button class="danger-button" data-admin-action="reset-board">一键重置积分榜</button>
         <button class="danger-button" data-admin-action="logout">退出后台</button>
       </div>
@@ -1497,8 +1564,8 @@ async function onSubmitMatch(event) {
     id: nextId(state.matches),
     playerAId: playerA.id,
     playerBId: playerB.id,
-    playerAGroup: isFirstWeek(playedAt) ? "无" : playerA.group,
-    playerBGroup: isFirstWeek(playedAt) ? "无" : playerB.group,
+    playerAGroup: isUngroupedWeek(playedAt) ? "无" : playerA.group,
+    playerBGroup: isUngroupedWeek(playedAt) ? "无" : playerB.group,
     result: data.result,
     scoreA: 0,
     scoreB: 0,
@@ -1533,7 +1600,7 @@ function updateGroupHint(form) {
     hint.innerHTML = `<span class="muted">不能录入同一名玩家的比赛。</span>`;
     return;
   }
-  if (isFirstWeek()) {
+  if (isUngroupedWeek()) {
     hint.innerHTML = `<span class="green-text">首周自由约战，可以提交。</span>`;
     return;
   }
@@ -1632,6 +1699,7 @@ function onAdminAction(action) {
   if (action === "settle") settleWeek();
   if (action === "next-week") enterNextWeek();
   if (action === "random-matches") addRandomMatches();
+  if (action === "export-backup") exportBackup();
   if (action === "delete-invalid") deleteInvalidMatches();
   if (action === "reset-board") resetBoard();
   if (action === "seed") {
@@ -1669,7 +1737,7 @@ function addRandomMatches(count = 100) {
   const players = activePlayers();
   for (let i = 0; i < players.length; i += 1) {
     for (let j = i + 1; j < players.length; j += 1) {
-      if (isFirstWeek() || players[i].group === players[j].group) {
+      if (isUngroupedWeek() || players[i].group === players[j].group) {
         sameGroupPairs.push([players[i], players[j]]);
       }
     }
@@ -1701,8 +1769,8 @@ function addRandomMatches(count = 100) {
       id: nextId(state.matches),
       playerAId: playerA.id,
       playerBId: playerB.id,
-      playerAGroup: isFirstWeek(playedAt) ? "无" : playerA.group,
-      playerBGroup: isFirstWeek(playedAt) ? "无" : playerB.group,
+      playerAGroup: isUngroupedWeek(playedAt) ? "无" : playerA.group,
+      playerBGroup: isUngroupedWeek(playedAt) ? "无" : playerB.group,
       result,
       scoreA: 0,
       scoreB: 0,
@@ -1715,6 +1783,20 @@ function addRandomMatches(count = 100) {
     });
   }
   persistAndRender(`已随机录入 ${count} 场战报`);
+}
+
+function exportBackup() {
+  const stamp = new Date().toISOString().replaceAll(":", "-").slice(0, 19);
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `oh-league-backup-${stamp}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  toast("数据备份已导出");
 }
 
 function nextMatchStartDate() {
@@ -1741,14 +1823,15 @@ function nextManualMatchDate() {
 
 function resetBoard() {
   if (!confirm("确认重置积分榜并清除所有战报、结算记录和荣誉记录？玩家名单会保留。")) return;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = dateInputValue(new Date());
   state.matches = [];
   state.settlements = [];
   state.champions = [];
   state.groupHistory = [];
   state.metaHistory = [];
   state.simulationDate = today;
-  state.seasonStartDate = weekKey(today);
+  state.seasonStartDate = OFFICIAL_SEASON_START_DATE;
+  state.officialResetDone = today >= OFFICIAL_SEASON_START_DATE;
   for (const player of state.players) {
     player.manualAdjustment = 0;
     player.totalPoints = 0;
@@ -1979,7 +2062,7 @@ function playerLink(id, fallbackName = null, className = "inline-link") {
 }
 
 function displayPlayerGroup(player) {
-  if (isFirstWeek()) return "无";
+  if (isUngroupedWeek()) return "无";
   return `${player.group}组`;
 }
 
@@ -2091,6 +2174,10 @@ function currentWeekKey() {
 
 function isFirstWeek(dateInput = currentSimulationDate()) {
   return weekNumber(dateInput) === 1;
+}
+
+function isUngroupedWeek(dateInput = currentSimulationDate()) {
+  return weekNumber(dateInput) <= 1;
 }
 
 function previousWeekKey(week) {
