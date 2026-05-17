@@ -968,8 +968,8 @@ function renderMetaHistory() {
 function renderPlayerTable(players) {
   if (!players.length) return `<div class="empty">暂无玩家</div>`;
   return `
-    <div class="table-wrap">
-      <table>
+    <div class="table-wrap leaderboard-wrap">
+      <table class="leaderboard-table">
         <thead>
           <tr>
             <th>排名</th><th>玩家</th><th>积分</th><th>组别</th><th>周战绩</th><th>总战绩</th><th>队套场次</th>
@@ -1440,6 +1440,34 @@ function hideH2hModal() {
   document.querySelectorAll(".modal-backdrop").forEach((item) => item.remove());
 }
 
+function showConfirmDialog({ title, body, confirmText = "确认", cancelText = "取消" }) {
+  return new Promise((resolve) => {
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop";
+    modal.innerHTML = `
+      <div class="modal-panel confirm-panel">
+        <div class="modal-head">
+          <h2>${escapeHtml(title)}</h2>
+        </div>
+        <div class="confirm-body">${body}</div>
+        <div class="confirm-actions">
+          <button class="ghost-button" data-confirm-cancel>${escapeHtml(cancelText)}</button>
+          <button class="primary-button" data-confirm-ok>${escapeHtml(confirmText)}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    const finish = (value) => {
+      modal.remove();
+      resolve(value);
+    };
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal || event.target.closest("[data-confirm-cancel]")) finish(false);
+      if (event.target.closest("[data-confirm-ok]")) finish(true);
+    });
+  });
+}
+
 async function onSubmitMatch(event) {
   event.preventDefault();
   const data = formData(event.currentTarget);
@@ -1453,7 +1481,13 @@ async function onSubmitMatch(event) {
     toast("已移出积分榜的玩家不能提交新战报");
     return;
   }
-  if (!confirm(matchConfirmText(playerA, playerB, data.result, data.metaUsage))) return;
+  const confirmed = await showConfirmDialog({
+    title: "确认提交战报？",
+    body: matchConfirmHtml(playerA, playerB, data.result, data.metaUsage),
+    confirmText: "确认提交",
+    cancelText: "再检查一下"
+  });
+  if (!confirmed) return;
   const playedAt = nextManualMatchDate().toISOString();
 
   state.matches.push({
@@ -1997,17 +2031,16 @@ function metaUsageText(usage, playerA, playerB) {
   return "无人使用";
 }
 
-function matchConfirmText(playerA, playerB, result, metaUsage) {
-  return [
-    "确认提交这场战报？",
-    "",
-    `玩家 A：${playerA.name}`,
-    `玩家 B：${playerB.name}`,
-    `比赛结果：${resultText(result)}`,
-    `Meta 队套：${metaUsageText(metaUsage, playerA, playerB)}`,
-    "",
-    "提交后会立即计入积分榜。"
-  ].join("\n");
+function matchConfirmHtml(playerA, playerB, result, metaUsage) {
+  return `
+    <dl class="confirm-summary">
+      <div><dt>玩家 A</dt><dd>${escapeHtml(playerA.name)}</dd></div>
+      <div><dt>玩家 B</dt><dd>${escapeHtml(playerB.name)}</dd></div>
+      <div><dt>比赛结果</dt><dd>${escapeHtml(resultText(result))}</dd></div>
+      <div><dt>Meta 队套</dt><dd>${escapeHtml(metaUsageText(metaUsage, playerA, playerB))}</dd></div>
+    </dl>
+    <p class="muted tiny">提交后会立即计入积分榜。</p>
+  `;
 }
 
 function getMatchMetaUsers(match) {
