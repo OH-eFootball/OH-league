@@ -813,14 +813,14 @@ function renderPlayerDetail() {
         </div>
       </div>
     </section>
-    <section class="two-grid">
+    <section class="two-grid profile-detail-grid">
       <div class="panel">
         <h2>得分记录</h2>
-        <div class="match-list">${pointTimeline.length ? pointTimeline.map(renderPointTimelineCard).join("") : `<div class="empty">暂无有效比赛</div>`}</div>
+        <div class="match-list profile-timeline-list">${pointTimeline.length ? pointTimeline.map(renderPointTimelineCard).join("") : `<div class="empty">暂无有效比赛</div>`}</div>
       </div>
       <div class="panel">
         <h2>历史成绩</h2>
-        ${weeklyHistory.length ? weeklyHistory.map(renderGroupHistoryLine).join("") : `<p class="muted">暂无结算成绩</p>`}
+        <div class="profile-history-list">${weeklyHistory.length ? weeklyHistory.map(renderGroupHistoryLine).join("") : `<p class="muted">暂无结算成绩</p>`}</div>
       </div>
     </section>
   `;
@@ -832,13 +832,13 @@ function renderAdmin() {
       <section class="panel admin-lock">
         <div class="eyebrow">Admin</div>
         <h1 class="section-title gradient-title">管理员后台</h1>
+        <p class="muted">玩家无需使用后台，仅管理员能进入。</p>
         <form id="admin-login">
           ${inputField("后台密码", "password", "password", "")}
           <div class="button-row">
             <button class="primary-button" type="submit">进入后台</button>
           </div>
         </form>
-        <p class="muted tiny">默认本地测试密码是 admin。公开网站请在 supabase-config.js 里改成你自己的密码。</p>
       </section>
     `;
   }
@@ -1453,6 +1453,7 @@ async function onSubmitMatch(event) {
     toast("已移出积分榜的玩家不能提交新战报");
     return;
   }
+  if (!confirm(matchConfirmText(playerA, playerB, data.result, data.metaUsage))) return;
   const playedAt = nextManualMatchDate().toISOString();
 
   state.matches.push({
@@ -1987,6 +1988,26 @@ function metaUsersFromUsage(usage, playerAId, playerBId) {
   if (usage === "B") return [Number(playerBId)];
   if (usage === "both") return [Number(playerAId), Number(playerBId)];
   return [];
+}
+
+function metaUsageText(usage, playerA, playerB) {
+  if (usage === "A") return playerA.name;
+  if (usage === "B") return playerB.name;
+  if (usage === "both") return `${playerA.name}、${playerB.name}`;
+  return "无人使用";
+}
+
+function matchConfirmText(playerA, playerB, result, metaUsage) {
+  return [
+    "确认提交这场战报？",
+    "",
+    `玩家 A：${playerA.name}`,
+    `玩家 B：${playerB.name}`,
+    `比赛结果：${resultText(result)}`,
+    `Meta 队套：${metaUsageText(metaUsage, playerA, playerB)}`,
+    "",
+    "提交后会立即计入积分榜。"
+  ].join("\n");
 }
 
 function getMatchMetaUsers(match) {

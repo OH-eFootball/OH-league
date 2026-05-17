@@ -290,6 +290,11 @@ h3 {
   font-size: 26px;
 }
 
+.profile-history-list {
+  display: grid;
+  gap: 8px;
+}
+
 .panel {
   margin-top: 18px;
   padding: 20px;
@@ -799,5 +804,53 @@ tr:hover td {
 
   .nav-tabs button {
     flex: 0 0 auto;
+  }
+
+  .profile-stat-grid {
+    display: flex;
+    grid-template-columns: none;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    scroll-snap-type: x proximity;
+  }
+
+  .profile-stat-grid .stat-card {
+    flex: 0 0 160px;
+    scroll-snap-align: start;
+  }
+
+  .profile-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .profile-timeline-list {
+    display: flex;
+    overflow-x: auto;
+    max-height: none;
+    padding-bottom: 8px;
+    scroll-snap-type: x proximity;
+  }
+
+  .profile-timeline-list .timeline-card {
+    flex: 0 0 min(520px, calc(100vw - 64px));
+    scroll-snap-align: start;
+  }
+
+  .profile-history-list {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    scroll-snap-type: x proximity;
+  }
+
+  .profile-history-list p {
+    flex: 0 0 auto;
+    min-width: 220px;
+    margin-bottom: 0;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.06);
+    padding: 12px;
+    scroll-snap-align: start;
   }
 }
