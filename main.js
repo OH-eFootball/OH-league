@@ -1046,7 +1046,10 @@ function renderMatchCardAdmin(match) {
       <p class="muted tiny">${weekLabel(match.playedAt)} · ${formatDate(match.playedAt)} · ${match.valid ? `有效，积分 ${match.pointsA}:${match.pointsB}` : `无效：${escapeHtml(match.invalidReason)}`}</p>
       <p class="muted tiny">组别：${escapeHtml(matchGroupsLabel(match))}</p>
       ${renderMetaUsageLine(match)}
-      <button class="danger-button" data-delete-match="${match.id}">删除比赛</button>
+      <div class="button-row">
+        <button class="ghost-button tiny-button" data-edit-match="${match.id}">修改战报</button>
+        <button class="danger-button tiny-button" data-delete-match="${match.id}">删除比赛</button>
+      </div>
     </article>
   `;
 }
@@ -1343,6 +1346,7 @@ function bindPageEvents() {
   });
 
   bindDeleteMatchButtons(app);
+  bindEditMatchButtons(app);
 
   bindAdminPlayerControls(app);
 }
@@ -1350,6 +1354,12 @@ function bindPageEvents() {
 function bindDeleteMatchButtons(root = app) {
   root.querySelectorAll("[data-delete-match]").forEach((button) => {
     button.addEventListener("click", () => deleteMatch(Number(button.dataset.deleteMatch)));
+  });
+}
+
+function bindEditMatchButtons(root = app) {
+  root.querySelectorAll("[data-edit-match]").forEach((button) => {
+    button.addEventListener("click", () => showEditMatchModal(Number(button.dataset.editMatch)));
   });
 }
 
@@ -1393,6 +1403,7 @@ function updateAdminMatchesView() {
   if (list) {
     list.innerHTML = renderAdminMatchList(visibleMatches);
     bindDeleteMatchButtons(list);
+    bindEditMatchButtons(list);
   }
 }
 
@@ -1462,6 +1473,105 @@ function showH2hModal(playerId, opponentId) {
 
 function hideH2hModal() {
   document.querySelectorAll(".modal-backdrop").forEach((item) => item.remove());
+}
+
+function showEditMatchModal(matchId) {
+  const match = state.matches.find((item) => Number(item.id) === Number(matchId));
+  if (!match) {
+    toast("没有找到这场战报");
+    return;
+  }
+  const playerA = state.players.find((player) => Number(player.id) === Number(match.playerAId));
+  const playerB = state.players.find((player) => Number(player.id) === Number(match.playerBId));
+  if (!playerA || !playerB) {
+    toast("战报玩家信息不完整");
+    return;
+  }
+  const currentMetaUsage = metaUsageFromMatch(match);
+  const modal = document.createElement("div");
+  modal.className = "modal-backdrop";
+  modal.innerHTML = `
+    <div class="modal-panel">
+      <div class="modal-head">
+        <h2>修改战报</h2>
+        <button class="ghost-button" data-close-modal type="button">关闭</button>
+      </div>
+      <form id="edit-match-form" class="edit-match-form">
+        <div class="confirm-summary">
+          <div><dt>玩家 A</dt><dd>${escapeHtml(playerA.name)}</dd></div>
+          <div><dt>玩家 B</dt><dd>${escapeHtml(playerB.name)}</dd></div>
+        </div>
+        <div class="form-grid">
+          ${selectField("比赛结果", "result", `
+            <option value="A_WIN" ${match.result === "A_WIN" ? "selected" : ""}>A 胜</option>
+            <option value="DRAW" ${match.result === "DRAW" ? "selected" : ""}>平局</option>
+            <option value="B_WIN" ${match.result === "B_WIN" ? "selected" : ""}>B 胜</option>
+          `, true)}
+          ${selectField("Meta 队套使用情况", "metaUsage", `
+            <option value="none" ${currentMetaUsage === "none" ? "selected" : ""}>无人使用</option>
+            <option value="A" ${currentMetaUsage === "A" ? "selected" : ""}>A 玩家</option>
+            <option value="B" ${currentMetaUsage === "B" ? "selected" : ""}>B 玩家</option>
+            <option value="both" ${currentMetaUsage === "both" ? "selected" : ""}>A 和 B 玩家</option>
+          `, true)}
+          ${inputField("比赛时间", "playedAt", "datetime-local", localDateTimeValue(match.playedAt))}
+        </div>
+        <p class="muted tiny">修改时间会影响同周内的连胜顺序；保存后积分榜会重新计算。</p>
+        <div class="button-row">
+          <button class="primary-button" type="submit">保存修改</button>
+          <button class="ghost-button" data-close-modal type="button">取消</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal || event.target.closest("[data-close-modal]")) hideH2hModal();
+  });
+  modal.querySelector("#edit-match-form").addEventListener("submit", (event) => updateMatchFromAdmin(event, matchId));
+}
+
+async function updateMatchFromAdmin(event, matchId) {
+  event.preventDefault();
+  const data = formData(event.currentTarget);
+  const playedAtDate = new Date(data.playedAt);
+  if (Number.isNaN(playedAtDate.getTime())) {
+    toast("比赛时间格式不正确");
+    return;
+  }
+
+  try {
+    await loadState();
+  } catch (error) {
+    toast(error?.message || "同步最新数据失败，请稍后重试");
+    return;
+  }
+
+  const match = state.matches.find((item) => Number(item.id) === Number(matchId));
+  if (!match) {
+    toast("这场战报已经不存在");
+    hideH2hModal();
+    render();
+    return;
+  }
+  const playerA = state.players.find((player) => Number(player.id) === Number(match.playerAId));
+  const playerB = state.players.find((player) => Number(player.id) === Number(match.playerBId));
+  if (!playerA || !playerB) {
+    toast("战报玩家信息不完整");
+    return;
+  }
+
+  const playedAt = playedAtDate.toISOString();
+  match.result = data.result;
+  match.metaUserId = null;
+  match.metaUserIds = metaUsersFromUsage(data.metaUsage, playerA.id, playerB.id);
+  match.playedAt = playedAt;
+  match.weekKey = weekKey(playedAt);
+  match.playerAGroup = isUngroupedWeek(playedAt) ? "无" : match.playerAGroup || playerA.group;
+  match.playerBGroup = isUngroupedWeek(playedAt) ? "无" : match.playerBGroup || playerB.group;
+  match.updatedAt = new Date().toISOString();
+
+  hideH2hModal();
+  await persistAndRender("战报已修改，积分已重新计算", "admin");
 }
 
 function showConfirmDialog({ title, body, confirmText = "确认", cancelText = "取消" }) {
@@ -2103,6 +2213,18 @@ function metaUsersFromUsage(usage, playerAId, playerBId) {
   if (usage === "B") return [Number(playerBId)];
   if (usage === "both") return [Number(playerAId), Number(playerBId)];
   return [];
+}
+
+function metaUsageFromMatch(match) {
+  const users = Array.isArray(match.metaUserIds)
+    ? match.metaUserIds.map(Number)
+    : match.metaUserId ? [Number(match.metaUserId)] : [];
+  const hasA = users.includes(Number(match.playerAId));
+  const hasB = users.includes(Number(match.playerBId));
+  if (hasA && hasB) return "both";
+  if (hasA) return "A";
+  if (hasB) return "B";
+  return "none";
 }
 
 function metaUsageText(usage, playerA, playerB) {
