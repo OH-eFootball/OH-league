@@ -26,6 +26,7 @@ let selectedSubmitGroup = null;
 let selectedAdminMatchWeek = "全部";
 let selectedAdminMatchPlayerId = "全部";
 let startupError = "";
+let lastLoadedUpdatedAt = null;
 
 const app = document.querySelector("#app");
 
@@ -74,10 +75,11 @@ function navigateToPlayer(playerId, sourceRoute = currentRoute) {
 
 async function loadState() {
   if (supabaseClient) {
-    const { data, error } = await supabaseClient.from("league_state").select("data").eq("id", rowId).maybeSingle();
-    if (error) throwError(error.message);
+    const { data, error } = await supabaseClient.from("league_state").select("data,updated_at").eq("id", rowId).maybeSingle();
+    if (error) throw new Error(`数据库读取失败：${error.message}`);
     if (data?.data) {
       state = normalizeState(data.data);
+      lastLoadedUpdatedAt = data.updated_at || null;
     } else {
       state = createInitialState();
       seedIfEmpty();
@@ -96,10 +98,27 @@ async function saveState() {
   if (!state) return;
   const payload = JSON.parse(JSON.stringify(state));
   if (supabaseClient) {
-    const { error } = await supabaseClient
-      .from("league_state")
-      .upsert({ id: rowId, data: payload, updated_at: new Date().toISOString() });
-    if (error) throwError(error.message);
+    const nextUpdatedAt = new Date().toISOString();
+    if (lastLoadedUpdatedAt) {
+      const { data, error } = await supabaseClient
+        .from("league_state")
+        .update({ data: payload, updated_at: nextUpdatedAt })
+        .eq("id", rowId)
+        .eq("updated_at", lastLoadedUpdatedAt)
+        .select("updated_at")
+        .maybeSingle();
+      if (error) throw new Error(`数据库保存失败：${error.message}`);
+      if (!data) throw new Error("数据已被其他人更新，请刷新后重试。");
+      lastLoadedUpdatedAt = data.updated_at || nextUpdatedAt;
+    } else {
+      const { data, error } = await supabaseClient
+        .from("league_state")
+        .upsert({ id: rowId, data: payload, updated_at: nextUpdatedAt })
+        .select("updated_at")
+        .maybeSingle();
+      if (error) throw new Error(`数据库保存失败：${error.message}`);
+      lastLoadedUpdatedAt = data?.updated_at || nextUpdatedAt;
+    }
   } else {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   }
@@ -1493,19 +1512,34 @@ async function onSubmitMatch(event) {
     cancelText: "再检查一下"
   });
   if (!confirmed) return;
+
+  try {
+    await loadState();
+  } catch (error) {
+    toast(error?.message || "同步最新数据失败，请稍后重试");
+    return;
+  }
+
+  const freshPlayerA = state.players.find((player) => player.id === Number(data.playerAId));
+  const freshPlayerB = state.players.find((player) => player.id === Number(data.playerBId));
+  if (!freshPlayerA || !freshPlayerB || freshPlayerA.inactive || freshPlayerB.inactive) {
+    toast("玩家状态已变化，请刷新后重试");
+    return;
+  }
+
   const playedAt = nextManualMatchDate().toISOString();
 
   state.matches.push({
     id: nextId(state.matches),
-    playerAId: playerA.id,
-    playerBId: playerB.id,
-    playerAGroup: isUngroupedWeek(playedAt) ? "无" : playerA.group,
-    playerBGroup: isUngroupedWeek(playedAt) ? "无" : playerB.group,
+    playerAId: freshPlayerA.id,
+    playerBId: freshPlayerB.id,
+    playerAGroup: isUngroupedWeek(playedAt) ? "无" : freshPlayerA.group,
+    playerBGroup: isUngroupedWeek(playedAt) ? "无" : freshPlayerB.group,
     result: data.result,
     scoreA: 0,
     scoreB: 0,
     metaUserId: null,
-    metaUserIds: metaUsersFromUsage(data.metaUsage, playerA.id, playerB.id),
+    metaUserIds: metaUsersFromUsage(data.metaUsage, freshPlayerA.id, freshPlayerB.id),
     scoringMetaSnapshot: null,
     playedAt,
     weekKey: weekKey(playedAt),
@@ -1831,7 +1865,20 @@ async function updatePlayerManual(id, manualAdjustment) {
 
 async function persistAndRender(message, route = currentRoute) {
   recompute();
-  await saveState();
+  try {
+    await saveState();
+  } catch (error) {
+    toast(error?.message || "保存失败，请刷新后重试");
+    if (supabaseClient) {
+      try {
+        await loadState();
+      } catch (loadError) {
+        startupError = loadError?.message || "加载失败";
+      }
+    }
+    render();
+    return;
+  }
   currentRoute = route;
   location.hash = route;
   render();
