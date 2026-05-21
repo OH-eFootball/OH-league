@@ -1,6 +1,7 @@
 const STORAGE_KEY = "oh-league-state-v1";
 const GROUPS = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛"];
 const OFFICIAL_SEASON_START_DATE = "2026-05-18";
+const FIRST_WEEK_PLAYER_MATCH_LIMIT = 30;
 const STREAK_REWARDS = [
   { threshold: 3, bonus: 1 },
   { threshold: 5, bonus: 2 },
@@ -250,9 +251,9 @@ function recompute() {
     } else if (usedCount >= 2) {
       match.valid = false;
       match.invalidReason = "同两名玩家每周最多 2 场有效比赛";
-    } else if (isFirstWeek(match.playedAt) && (aWeekCount >= 20 || bWeekCount >= 20)) {
+    } else if (isFirstWeek(match.playedAt) && (aWeekCount >= FIRST_WEEK_PLAYER_MATCH_LIMIT || bWeekCount >= FIRST_WEEK_PLAYER_MATCH_LIMIT)) {
       match.valid = false;
-      match.invalidReason = "首周每人最多 20 场有效比赛";
+      match.invalidReason = `首周每人最多 ${FIRST_WEEK_PLAYER_MATCH_LIMIT} 场有效比赛`;
     }
 
     if (!match.valid) continue;
@@ -266,11 +267,6 @@ function recompute() {
     applyStreakBonus(match, b, match.result === "B_WIN", "B", claimed, streaks, matchMeta, matchWeek);
     applyPlayerStats(a, match.pointsA, match.result === "A_WIN", match.result === "DRAW", matchWeek);
     applyPlayerStats(b, match.pointsB, match.result === "B_WIN", match.result === "DRAW", matchWeek);
-  }
-
-  for (const settlement of state.settlements) {
-    const player = playerMap.get(Number(settlement.playerId));
-    if (player) player.totalPoints -= Number(settlement.penalty || 0);
   }
 
   refreshHighestGroups();
@@ -494,21 +490,20 @@ function settleWeek(targetWeek = settlementTargetWeek(), shouldPersist = true) {
       weekKey(match.playedAt) === targetWeek &&
       (Number(match.playerAId) === player.id || Number(match.playerBId) === player.id)
     )).length;
-    const penalty = Math.max(0, 5 - validMatches);
     state.settlements = state.settlements.filter((item) => !(item.playerId === player.id && item.weekKey === targetWeek));
     state.settlements.push({
       id: nextId(state.settlements),
       playerId: player.id,
       weekKey: targetWeek,
       validMatches,
-      penalty,
+      penalty: 0,
       settledAt: new Date().toISOString(),
       effectiveAt: settlementEffectiveTime(targetWeek).toISOString()
     });
   }
   recompute();
   forceRegroup(false, targetWeek);
-  if (shouldPersist) persistAndRender(`已结算第 ${weekNumber(targetWeek)} 周：活跃度扣分与分组已更新`);
+  if (shouldPersist) persistAndRender(`已结算第 ${weekNumber(targetWeek)} 周：分组已更新`);
 }
 
 function settlementTargetWeek() {
@@ -594,7 +589,7 @@ function renderHome() {
               <p class="muted">提交战报，系统完成自动计分、连胜奖励、Meta 加成、排行榜、每周结算和自动分组。</p>
               <p class="muted">同组别内自由约战，每周结算后按总积分自动分为甲乙丙丁等组。</p>
               <p class="muted">胜 +3，平 +1，负 +0；使用本周 Meta 队套胜/平额外加 1 分，负不加分。</p>
-              <p class="muted">同两名玩家每周最多 2 场有效比赛；每人每周至少 5 场有效比赛，少 1 场扣 1 分。</p>
+              <p class="muted">同两名玩家每周最多 2 场有效比赛；首周每人最多 ${FIRST_WEEK_PLAYER_MATCH_LIMIT} 场有效比赛。</p>
               <p class="muted">三/五/十连胜每周分别触发一次额外加分；Meta 计分规则也可以额外加分。</p>
             </details>
           </div>
@@ -1009,7 +1004,6 @@ function renderPlayerTable(players) {
                 <span class="player-name-cell">
                   <a class="inline-link" href="#player:${player.id}" data-player-detail="${player.id}">${escapeHtml(player.name)}</a>
                   ${player.streak >= 2 ? `<span class="streak-flame" data-tooltip="连胜 ${player.streak} 场中！" aria-label="连胜${player.streak}场中">${player.streak}</span>` : ""}
-                  ${weeklyValidMatchCount(player.id) < 5 ? `<span class="activity-warning" data-tooltip="本周有效比赛数不足5场！" aria-label="本周有效比赛数不足5场"><span class="activity-mark"></span></span>` : ""}
                 </span>
               </td>
               <td>
@@ -1059,7 +1053,6 @@ function renderAdminMatchList(matches) {
 }
 
 function renderPointTimelineCard(item) {
-  if (item.type === "penalty") return renderPenaltyTimelineCard(item);
   return `
     <article class="match-card timeline-card">
       <div>
@@ -1067,21 +1060,6 @@ function renderPointTimelineCard(item) {
         <p class="muted tiny">${weekLabel(item.match.playedAt)} · ${formatDate(item.match.playedAt)}</p>
         ${renderMetaUsageLine(item.match)}
         <button class="ghost-button tiny-button" data-h2h="${item.match.playerAId}:${item.match.playerBId}">查看交手</button>
-      </div>
-      <div class="timeline-score">
-        <div class="timeline-gain">${renderScoreParts(item.parts)}</div>
-        <div class="timeline-total"><span>${item.before}</span> → <b>${item.after}</b></div>
-      </div>
-    </article>
-  `;
-}
-
-function renderPenaltyTimelineCard(item) {
-  return `
-    <article class="match-card timeline-card invalid">
-      <div>
-        <b>第 ${weekNumber(item.settlement.weekKey)} 周 · 活跃场次不足</b>
-        <p class="muted tiny">${formatDate(item.settlement.settledAt)} · 有效 ${item.settlement.validMatches} 场</p>
       </div>
       <div class="timeline-score">
         <div class="timeline-gain">${renderScoreParts(item.parts)}</div>
@@ -1119,16 +1097,7 @@ function playerPointTimeline(playerId) {
         order: matchTimelineOrder(match)
       };
     });
-  const penaltyEvents = state.settlements
-    .filter((item) => Number(item.playerId) === Number(playerId) && Number(item.penalty || 0) > 0)
-    .map((item) => ({
-      type: "penalty",
-      settlement: item,
-      points: -Number(item.penalty || 0),
-      parts: [{ type: "penalty", value: Number(item.penalty || 0), amount: -Number(item.penalty || 0), multiplier: 1 }],
-      order: penaltyTimelineOrder(item)
-    }));
-  return [...matchEvents, ...penaltyEvents]
+  return matchEvents
     .sort((a, b) => a.order - b.order)
     .map((event) => {
       if (event.type === "match") matchIndex += 1;
@@ -2053,11 +2022,6 @@ function matchTimelineOrder(match) {
   const playedAt = new Date(match.playedAt).getTime();
   const offset = Number.isNaN(playedAt) ? 0 : Math.max(0, playedAt - weekStart);
   return weekStart + Math.min(offset, 7 * 86400000 - 2);
-}
-
-function penaltyTimelineOrder(settlement) {
-  const weekStart = new Date(`${settlement.weekKey}T00:00:00`).getTime();
-  return weekStart + 7 * 86400000 - 1;
 }
 
 function adminMatchWeeks() {
