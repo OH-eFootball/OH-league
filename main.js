@@ -636,8 +636,8 @@ function shouldShowMetaFacts() {
 }
 
 function currentWeekInfo() {
-  const now = currentSimulationDate();
-  return { number: weekNumber(now), countdown: settlementCountdown(now) };
+  const leagueDate = currentSimulationDate();
+  return { number: weekNumber(leagueDate), countdown: settlementCountdown(new Date()) };
 }
 
 function weekNumber(dateInput = new Date()) {
